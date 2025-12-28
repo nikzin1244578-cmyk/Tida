@@ -1,7 +1,7 @@
 // TIDA AI - Complete JavaScript Application
 // Configuration
 const CONFIG = {
-  OPENROUTER_API_KEY: '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', // Replace with your actual API key
+  OPENROUTER_API_KEY: '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', // Replace with your actual API key
   MODEL: 'openai/gpt-oss-120b:free',
   API_URL: 'https://openrouter.ai/api/v1/chat/completions'
 };
