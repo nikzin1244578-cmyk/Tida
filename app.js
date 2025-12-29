@@ -1,8 +1,8 @@
 // TIDA AI - Complete JavaScript Application
 // Configuration
 const CONFIG = {
-  OPENROUTER_API_KEY: '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', // Replace with your actual API key
-  MODEL: 'openai/gpt-oss-120b:free',
+  OPENROUTER_API_KEY: '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',
+  MODEL: 'nex-agi/deepseek-v3.1-nex-n1:free', // Updated to working free model
   API_URL: 'https://openrouter.ai/api/v1/chat/completions'
 };
 
@@ -46,21 +46,14 @@ function init() {
 
 // Event Listeners
 function setupEventListeners() {
-  // Mobile menu
   elements.mobileMenuBtn.addEventListener('click', toggleSidebar);
   elements.overlay.addEventListener('click', closeSidebar);
-  
-  // Chat actions
   elements.newChatBtn.addEventListener('click', createNewChat);
   elements.deleteAllBtn.addEventListener('click', deleteAllChats);
   elements.logoutBtn.addEventListener('click', logout);
-  
-  // Input actions
   elements.sendBtn.addEventListener('click', sendMessage);
   elements.clearBtn.addEventListener('click', clearInput);
   elements.voiceBtn.addEventListener('click', startVoiceInput);
-  
-  // Textarea auto-resize and Enter key
   elements.userInput.addEventListener('input', autoResizeTextarea);
   elements.userInput.addEventListener('keydown', handleKeyDown);
 }
@@ -77,9 +70,7 @@ function checkLoginStatus() {
 }
 
 function handleGoogleSignIn(response) {
-  // Parse Google JWT token
   const payload = parseJwt(response.credential);
-  
   state.currentUser = {
     id: payload.sub,
     name: payload.name,
@@ -87,7 +78,6 @@ function handleGoogleSignIn(response) {
     picture: payload.picture,
     provider: 'google'
   };
-  
   localStorage.setItem('tidaUser', JSON.stringify(state.currentUser));
   showMainInterface();
 }
@@ -100,7 +90,6 @@ function devLogin() {
     picture: null,
     provider: 'guest'
   };
-  
   localStorage.setItem('tidaUser', JSON.stringify(state.currentUser));
   showMainInterface();
 }
@@ -117,13 +106,11 @@ function logout() {
 function showMainInterface() {
   elements.loginModal.classList.remove('show');
   updateUserProfile();
-  
   if (state.chats.length === 0) {
     createNewChat();
   } else {
     loadChat(state.chats[0].id);
   }
-  
   renderChatHistory();
 }
 
@@ -133,7 +120,6 @@ function updateUserProfile() {
     elements.userEmail.textContent = state.currentUser.email;
     elements.userStatus.classList.add('online');
     elements.logoutBtn.classList.remove('hidden');
-    
     if (state.currentUser.picture) {
       elements.userAvatar.innerHTML = `
         <img src="${state.currentUser.picture}" alt="User Avatar">
@@ -158,11 +144,9 @@ function createNewChat() {
     createdAt: Date.now(),
     updatedAt: Date.now()
   };
-  
   state.chats.unshift(newChat);
   state.currentChatId = chatId;
   state.messages = [];
-  
   saveToLocalStorage();
   renderChatHistory();
   clearChatBox();
@@ -172,10 +156,8 @@ function createNewChat() {
 function loadChat(chatId) {
   const chat = state.chats.find(c => c.id === chatId);
   if (!chat) return;
-  
   state.currentChatId = chatId;
   state.messages = chat.messages || [];
-  
   renderMessages();
   updateActiveChatItem();
   closeSidebar();
@@ -183,9 +165,7 @@ function loadChat(chatId) {
 
 function deleteChat(chatId) {
   if (!confirm('Delete this chat?')) return;
-  
   state.chats = state.chats.filter(c => c.id !== chatId);
-  
   if (state.currentChatId === chatId) {
     if (state.chats.length > 0) {
       loadChat(state.chats[0].id);
@@ -193,18 +173,15 @@ function deleteChat(chatId) {
       createNewChat();
     }
   }
-  
   saveToLocalStorage();
   renderChatHistory();
 }
 
 function deleteAllChats() {
   if (!confirm('Delete all chats? This cannot be undone.')) return;
-  
   state.chats = [];
   state.messages = [];
   state.currentChatId = null;
-  
   saveToLocalStorage();
   renderChatHistory();
   createNewChat();
@@ -225,54 +202,53 @@ async function sendMessage() {
   const message = elements.userInput.value.trim();
   if (!message) return;
   
-  // Add user message
   addMessage('user', message);
   elements.userInput.value = '';
   autoResizeTextarea();
-  
-  // Show typing indicator
   showTypingIndicator();
   
   try {
-    // Make API call with reasoning
     const response = await callOpenRouterAPI(state.messages);
-    
-    // Hide typing indicator
     hideTypingIndicator();
     
-    // Add assistant response
-    if (response) {
-      addMessage('assistant', response.content, response.reasoning_details);
+    if (response && response.content) {
+      addMessage('assistant', response.content);
     } else {
-      addMessage('assistant', 'Sorry, I encountered an error. Please try again.');
+      addMessage('assistant', 'Sorry, I received an empty response. Please try again.');
     }
   } catch (error) {
     hideTypingIndicator();
     console.error('API Error:', error);
-    addMessage('assistant', 'Sorry, I encountered an error connecting to the AI service. Please check your API key and try again.');
+    
+    // More detailed error messages
+    let errorMessage = 'Sorry, I encountered an error. ';
+    if (error.message.includes('401')) {
+      errorMessage += 'API key is invalid or expired.';
+    } else if (error.message.includes('429')) {
+      errorMessage += 'Rate limit exceeded. Please wait a moment.';
+    } else if (error.message.includes('500')) {
+      errorMessage += 'Server error. Please try again later.';
+    } else if (error.message.includes('Failed to fetch')) {
+      errorMessage += 'Network error. Check your connection.';
+    } else {
+      errorMessage += 'Please try again.';
+    }
+    
+    addMessage('assistant', errorMessage);
   }
 }
 
 function addMessage(role, content, reasoningDetails = null) {
-  const message = {
-    role,
-    content,
-    timestamp: Date.now()
-  };
-  
+  const message = { role, content, timestamp: Date.now() };
   if (reasoningDetails) {
     message.reasoning_details = reasoningDetails;
   }
-  
   state.messages.push(message);
   
-  // Update current chat
   const chat = state.chats.find(c => c.id === state.currentChatId);
   if (chat) {
     chat.messages = state.messages;
     chat.updatedAt = Date.now();
-    
-    // Update title with first user message
     if (role === 'user' && chat.messages.length === 1) {
       updateChatTitle(chat.id, content);
     }
@@ -283,44 +259,63 @@ function addMessage(role, content, reasoningDetails = null) {
   scrollToBottom();
 }
 
-// API Integration
+// API Integration - FIXED VERSION
 async function callOpenRouterAPI(messages) {
-  // Prepare messages for API (exclude reasoning_details from user messages)
-  const apiMessages = messages.map(msg => {
-    const apiMsg = {
-      role: msg.role,
-      content: msg.content
-    };
-    
-    // Preserve reasoning_details for assistant messages
-    if (msg.role === 'assistant' && msg.reasoning_details) {
-      apiMsg.reasoning_details = msg.reasoning_details;
-    }
-    
-    return apiMsg;
-  });
+  // Convert internal message format to API format
+  const apiMessages = messages.map(msg => ({
+    role: msg.role,
+    content: msg.content
+  }));
   
   const requestBody = {
     model: CONFIG.MODEL,
-    messages: apiMessages,
-    reasoning: { enabled: true }
+    messages: apiMessages
   };
   
-  const response = await fetch(CONFIG.API_URL, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${CONFIG.OPENROUTER_API_KEY}`,
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify(requestBody)
-  });
+  console.log('Sending request to OpenRouter:', requestBody);
   
-  if (!response.ok) {
-    throw new Error(`API error: ${response.status}`);
+  try {
+    const response = await fetch(CONFIG.API_URL, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${CONFIG.OPENROUTER_API_KEY}`,
+        'HTTP-Referer': window.location.href || 'https://tida.ai',
+        'X-Title': 'TIDA AI Chat',
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(requestBody)
+    });
+    
+    console.log('Response status:', response.status);
+    
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('API Error Response:', errorText);
+      
+      let errorData;
+      try {
+        errorData = JSON.parse(errorText);
+      } catch (e) {
+        errorData = { message: errorText };
+      }
+      
+      throw new Error(`API error: ${response.status} - ${JSON.stringify(errorData)}`);
+    }
+    
+    const data = await response.json();
+    console.log('API Response:', data);
+    
+    // Check if response has the expected structure
+    if (data.choices && data.choices.length > 0 && data.choices[0].message) {
+      return data.choices[0].message;
+    } else {
+      console.error('Unexpected response structure:', data);
+      throw new Error('Invalid response structure from API');
+    }
+  } catch (error) {
+    console.error('Fetch error:', error);
+    throw error;
   }
-  
-  const data = await response.json();
-  return data.choices[0].message;
 }
 
 // UI Rendering
@@ -332,17 +327,10 @@ function renderMessages() {
 
 function renderMessage(message) {
   elements.welcomeMessage.classList.add('hidden');
-  
   const messageDiv = document.createElement('div');
   messageDiv.className = `message ${message.role}`;
-  
-  const avatarIcon = message.role === 'user' 
-    ? '<i class="fas fa-user"></i>' 
-    : '<i class="fas fa-robot"></i>';
-  
+  const avatarIcon = message.role === 'user' ? '<i class="fas fa-user"></i>' : '<i class="fas fa-robot"></i>';
   const label = message.role === 'user' ? 'You' : 'TIDA AI';
-  
-  // Format message content
   const formattedContent = formatMessageContent(message.content);
   
   messageDiv.innerHTML = `
@@ -357,7 +345,6 @@ function renderMessage(message) {
   
   elements.chatBox.appendChild(messageDiv);
   
-  // Add copy buttons to code blocks
   messageDiv.querySelectorAll('pre').forEach(pre => {
     const copyBtn = document.createElement('button');
     copyBtn.className = 'copy-btn';
@@ -368,7 +355,6 @@ function renderMessage(message) {
 }
 
 function formatMessageContent(content) {
-  // Escape HTML
   let formatted = content
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
@@ -398,7 +384,6 @@ function renderChatHistory() {
     if (chat.id === state.currentChatId) {
       chatItem.classList.add('active');
     }
-    
     const date = new Date(chat.updatedAt);
     const timeStr = formatTime(date);
     
@@ -423,7 +408,6 @@ function renderChatHistory() {
         loadChat(chat.id);
       }
     };
-    
     elements.chatHistory.appendChild(chatItem);
   });
 }
@@ -432,10 +416,8 @@ function updateActiveChatItem() {
   document.querySelectorAll('.chat-item').forEach(item => {
     item.classList.remove('active');
   });
-  
   const activeItem = Array.from(document.querySelectorAll('.chat-item'))
     .find(item => item.onclick.toString().includes(state.currentChatId));
-  
   if (activeItem) {
     activeItem.classList.add('active');
   }
@@ -522,7 +504,7 @@ function copyCode(pre, btn) {
 function startVoiceInput() {
   if ('webkitSpeechRecognition' in window) {
     const recognition = new webkitSpeechRecognition();
-    recognition.lang = 'km-KH'; // Khmer language
+    recognition.lang = 'km-KH';
     recognition.continuous = false;
     recognition.interimResults = false;
     
@@ -540,9 +522,15 @@ function startVoiceInput() {
       elements.voiceBtn.style.color = '';
     };
     
+    recognition.onerror = (event) => {
+      console.error('Speech recognition error:', event.error);
+      elements.voiceBtn.style.color = '';
+      alert('Voice input error: ' + event.error);
+    };
+    
     recognition.start();
   } else {
-    alert('Voice input is not supported in your browser.');
+    alert('Voice input is not supported in your browser. Please use Chrome or Edge.');
   }
 }
 
@@ -583,7 +571,6 @@ function loadFromLocalStorage() {
   try {
     const chats = localStorage.getItem('tidaChats');
     const currentChatId = localStorage.getItem('tidaCurrentChatId');
-    
     if (chats) state.chats = JSON.parse(chats);
     if (currentChatId) state.currentChatId = currentChatId;
   } catch (error) {
