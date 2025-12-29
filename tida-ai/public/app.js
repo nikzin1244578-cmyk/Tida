@@ -2,12 +2,23 @@
 // Configuration
 const CONFIG = {
   API_URL: 'https://openrouter.ai/api/v1/chat/completions',
-  API_KEY: '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', // Replace with your OpenRouter API key
+  API_KEY: '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', // IMPORTANT: Add your OpenRouter API key here
   MODEL: 'nex-agi/deepseek-v3.1-nex-n1:free',
-  SITE_URL: 'https://tida-ai.com',
+  SITE_URL: window.location.origin || 'https://tida-ai.com',
   SITE_NAME: 'TIDA AI',
   MAX_HISTORY: 50
 };
+
+// Check API key on load
+function checkAPIKey() {
+  if (!CONFIG.API_KEY || CONFIG.API_KEY === '') {
+    console.error('⚠️ API KEY NOT SET!');
+    console.log('📝 Please add your OpenRouter API key in app.js line 5');
+    console.log('🔗 Get your free API key at: https://openrouter.ai/keys');
+    return false;
+  }
+  return true;
+}
 
 // State Management
 let currentUser = null;
@@ -286,6 +297,12 @@ async function sendMessage() {
   const message = elements.userInput.value.trim();
   if (!message) return;
   
+  // Check API key first
+  if (!checkAPIKey()) {
+    alert('⚠️ API Key Not Configured!\n\nPlease add your OpenRouter API key in app.js (line 5).\n\nGet your free API key at:\nhttps://openrouter.ai/keys');
+    return;
+  }
+  
   // Create new chat if needed
   if (!currentChatId) {
     createNewChat();
@@ -317,7 +334,21 @@ async function sendMessage() {
     
   } catch (error) {
     removeTypingIndicator(typingId);
-    addMessage('assistant', 'Sorry, I encountered an error. Please try again. Error: ' + error.message);
+    console.error('Error details:', error);
+    
+    let errorMessage = 'Sorry, I encountered an error. ';
+    
+    if (error.message.includes('401')) {
+      errorMessage += '🔑 Invalid API Key. Please check your OpenRouter API key in app.js.\n\nGet your key at: https://openrouter.ai/keys';
+    } else if (error.message.includes('429')) {
+      errorMessage += '⏱️ Rate limit exceeded. Please wait a moment and try again.';
+    } else if (error.message.includes('500')) {
+      errorMessage += '🔧 Server error. The AI service is temporarily unavailable.';
+    } else {
+      errorMessage += error.message;
+    }
+    
+    addMessage('assistant', errorMessage);
   }
   
   saveChatData();
