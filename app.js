@@ -1,18 +1,19 @@
-// TIDA AI - Khmer AI Assistant Application
+// TIDA AI - Khmer AI Assistant
 // Configuration
 const CONFIG = {
-  API_URL: "https://openrouter.ai/api/v1/chat/completions",
-  API_KEY: "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", // Replace with your actual API key
-  MODEL: "nex-agi/deepseek-v3.1-nex-n1:free",
-  SITE_URL: "https://tida-ai.app",
-  SITE_NAME: "TIDA AI"
+  API_URL: 'https://openrouter.ai/api/v1/chat/completions',
+  API_KEY: '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', // Replace with your OpenRouter API key
+  MODEL: 'nex-agi/deepseek-v3.1-nex-n1:free',
+  SITE_URL: 'https://tida-ai.com',
+  SITE_NAME: 'TIDA AI',
+  MAX_HISTORY: 50
 };
 
 // State Management
 let currentUser = null;
 let currentChatId = null;
-let chats = [];
-let messages = [];
+let chatHistory = {};
+let allChats = [];
 
 // DOM Elements
 const elements = {
@@ -21,376 +22,387 @@ const elements = {
   overlay: document.getElementById('overlay'),
   mobileMenuBtn: document.getElementById('mobileMenuBtn'),
   chatBox: document.getElementById('chatBox'),
-  welcomeMessage: document.getElementById('welcomeMessage'),
   userInput: document.getElementById('userInput'),
   sendBtn: document.getElementById('sendBtn'),
-  clearBtn: document.getElementById('clearBtn'),
-  voiceBtn: document.getElementById('voiceBtn'),
   newChatBtn: document.getElementById('newChatBtn'),
   deleteAllBtn: document.getElementById('deleteAllBtn'),
   logoutBtn: document.getElementById('logoutBtn'),
-  chatHistory: document.getElementById('chatHistory'),
-  chatCount: document.getElementById('chatCount'),
+  clearBtn: document.getElementById('clearBtn'),
+  voiceBtn: document.getElementById('voiceBtn'),
+  chatHistoryEl: document.getElementById('chatHistory'),
+  welcomeMessage: document.getElementById('welcomeMessage'),
   userName: document.getElementById('userName'),
   userEmail: document.getElementById('userEmail'),
   userAvatar: document.getElementById('userAvatar'),
-  userStatus: document.getElementById('userStatus')
+  userStatus: document.getElementById('userStatus'),
+  chatCount: document.getElementById('chatCount')
 };
 
-// Initialize Application
-function init() {
+// Initialize App
+function initApp() {
   loadUserData();
-  loadChatsFromStorage();
+  loadChats();
+  updateChatList();
   setupEventListeners();
-  autoResizeTextarea();
   
+  // Show login modal if not logged in
   if (!currentUser) {
-    showLoginModal();
-  } else {
-    hideLoginModal();
+    elements.loginModal.classList.add('show');
   }
+  
+  // Auto-resize textarea
+  autoResizeTextarea();
 }
 
 // Event Listeners
 function setupEventListeners() {
+  // Send message
   elements.sendBtn.addEventListener('click', sendMessage);
-  elements.userInput.addEventListener('keydown', handleEnterKey);
-  elements.userInput.addEventListener('input', autoResizeTextarea);
-  elements.clearBtn.addEventListener('click', clearInput);
-  elements.voiceBtn.addEventListener('click', toggleVoiceInput);
+  elements.userInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      sendMessage();
+    }
+  });
+  
+  // New chat
   elements.newChatBtn.addEventListener('click', createNewChat);
+  
+  // Delete all chats
   elements.deleteAllBtn.addEventListener('click', deleteAllChats);
+  
+  // Logout
   elements.logoutBtn.addEventListener('click', logout);
-  elements.mobileMenuBtn.addEventListener('click', toggleMobileSidebar);
-  elements.overlay.addEventListener('click', closeMobileSidebar);
+  
+  // Clear input
+  elements.clearBtn.addEventListener('click', () => {
+    elements.userInput.value = '';
+    elements.userInput.focus();
+  });
+  
+  // Voice input (placeholder)
+  elements.voiceBtn.addEventListener('click', () => {
+    alert('Voice input coming soon!');
+  });
+  
+  // Mobile menu
+  elements.mobileMenuBtn.addEventListener('click', toggleSidebar);
+  elements.overlay.addEventListener('click', closeSidebar);
+  
+  // Auto-resize textarea
+  elements.userInput.addEventListener('input', autoResizeTextarea);
 }
 
 // User Authentication
-function handleGoogleSignIn(response) {
-  try {
-    const userData = parseJwt(response.credential);
-    currentUser = {
-      id: userData.sub,
-      name: userData.name,
-      email: userData.email,
-      picture: userData.picture
-    };
-    saveUserData();
-    updateUserUI();
-    hideLoginModal();
-    createNewChat();
-  } catch (error) {
-    console.error('Google sign-in error:', error);
-    alert('Failed to sign in. Please try again.');
-  }
-}
-
 function devLogin() {
-  currentUser = {
+  const user = {
     id: 'dev_' + Date.now(),
-    name: 'Guest User',
-    email: 'guest@tida-ai.local',
-    picture: null
+    name: 'Dev User',
+    email: 'dev@tida-ai.com',
+    avatar: null
   };
-  saveUserData();
-  updateUserUI();
-  hideLoginModal();
-  createNewChat();
-}
-
-function logout() {
-  if (confirm('Are you sure you want to logout? Your chats will be deleted.')) {
-    currentUser = null;
-    chats = [];
-    messages = [];
-    currentChatId = null;
-    localStorage.removeItem('tidaUser');
-    localStorage.removeItem('tidaChats');
-    location.reload();
-  }
-}
-
-function parseJwt(token) {
-  const base64Url = token.split('.')[1];
-  const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
-  const jsonPayload = decodeURIComponent(atob(base64).split('').map(c => {
-    return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
-  }).join(''));
-  return JSON.parse(jsonPayload);
-}
-
-// UI Updates
-function updateUserUI() {
-  if (currentUser) {
-    elements.userName.textContent = currentUser.name;
-    elements.userEmail.textContent = currentUser.email;
-    elements.userStatus.classList.add('online');
-    elements.logoutBtn.classList.remove('hidden');
-    
-    if (currentUser.picture) {
-      elements.userAvatar.innerHTML = `<img src="${currentUser.picture}" alt="${currentUser.name}">`;
-    }
-  }
-}
-
-function showLoginModal() {
-  elements.loginModal.classList.add('show');
-}
-
-function hideLoginModal() {
+  
+  setUser(user);
   elements.loginModal.classList.remove('show');
 }
 
-// Mobile Menu
-function toggleMobileSidebar() {
-  elements.sidebar.classList.toggle('open');
-  elements.overlay.classList.toggle('show');
+function handleGoogleSignIn(response) {
+  // This would be called by Google Sign-In
+  const decoded = parseJwt(response.credential);
+  
+  const user = {
+    id: decoded.sub,
+    name: decoded.name,
+    email: decoded.email,
+    avatar: decoded.picture
+  };
+  
+  setUser(user);
+  elements.loginModal.classList.remove('show');
 }
 
-function closeMobileSidebar() {
-  elements.sidebar.classList.remove('open');
-  elements.overlay.classList.remove('show');
+function setUser(user) {
+  currentUser = user;
+  localStorage.setItem('tidaai_user', JSON.stringify(user));
+  
+  // Update UI
+  elements.userName.textContent = user.name;
+  elements.userEmail.textContent = user.email;
+  elements.userStatus.classList.add('online');
+  
+  if (user.avatar) {
+    elements.userAvatar.innerHTML = `<img src="${user.avatar}" alt="${user.name}">`;
+  } else {
+    elements.userAvatar.innerHTML = `<i class="fas fa-user" style="font-size: 20px;"></i>`;
+  }
+  
+  elements.logoutBtn.classList.remove('hidden');
+  
+  loadChats();
+  updateChatList();
+}
+
+function logout() {
+  if (confirm('Are you sure you want to logout?')) {
+    currentUser = null;
+    currentChatId = null;
+    chatHistory = {};
+    allChats = [];
+    
+    localStorage.removeItem('tidaai_user');
+    localStorage.removeItem('tidaai_chats');
+    localStorage.removeItem('tidaai_current_chat');
+    
+    elements.userName.textContent = 'Guest User';
+    elements.userEmail.textContent = 'Sign in to save';
+    elements.userStatus.classList.remove('online');
+    elements.userAvatar.innerHTML = `<i class="fas fa-user" style="font-size: 20px;"></i>`;
+    elements.logoutBtn.classList.add('hidden');
+    
+    updateChatList();
+    clearChat();
+    elements.loginModal.classList.add('show');
+  }
+}
+
+function loadUserData() {
+  const savedUser = localStorage.getItem('tidaai_user');
+  if (savedUser) {
+    currentUser = JSON.parse(savedUser);
+    setUser(currentUser);
+  }
 }
 
 // Chat Management
 function createNewChat() {
   const chatId = 'chat_' + Date.now();
-  const newChat = {
+  const chat = {
     id: chatId,
     title: 'New Chat',
     messages: [],
     createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString()
+    userId: currentUser?.id || 'guest'
   };
   
-  chats.unshift(newChat);
-  currentChatId = chatId;
-  messages = [];
-  
-  saveChatsToStorage();
-  renderChatHistory();
-  clearChatBox();
-  elements.welcomeMessage.classList.remove('hidden');
+  allChats.unshift(chat);
+  saveChatData();
+  loadChat(chatId);
+  updateChatList();
+  closeSidebar();
 }
 
 function loadChat(chatId) {
-  const chat = chats.find(c => c.id === chatId);
-  if (!chat) return;
-  
   currentChatId = chatId;
-  messages = chat.messages || [];
+  localStorage.setItem('tidaai_current_chat', chatId);
   
-  clearChatBox();
-  elements.welcomeMessage.classList.add('hidden');
+  const chat = allChats.find(c => c.id === chatId);
+  if (chat) {
+    chatHistory = { [chatId]: chat.messages };
+    renderMessages();
+  }
   
-  messages.forEach(msg => {
-    appendMessage(msg.role, msg.content, false);
-  });
-  
-  renderChatHistory();
-  closeMobileSidebar();
+  updateChatList();
 }
 
 function deleteChat(chatId) {
   if (confirm('Delete this chat?')) {
-    chats = chats.filter(c => c.id !== chatId);
+    allChats = allChats.filter(c => c.id !== chatId);
     
     if (currentChatId === chatId) {
-      if (chats.length > 0) {
-        loadChat(chats[0].id);
-      } else {
-        createNewChat();
-      }
+      currentChatId = null;
+      chatHistory = {};
+      clearChat();
     }
     
-    saveChatsToStorage();
-    renderChatHistory();
+    saveChatData();
+    updateChatList();
   }
 }
 
 function deleteAllChats() {
-  if (confirm('Delete all chats? This cannot be undone.')) {
-    chats = [];
-    messages = [];
+  if (confirm('Delete all chats? This cannot be undone!')) {
+    allChats = [];
     currentChatId = null;
-    saveChatsToStorage();
-    renderChatHistory();
-    createNewChat();
+    chatHistory = {};
+    
+    saveChatData();
+    updateChatList();
+    clearChat();
   }
 }
 
-function updateChatTitle(chatId, newTitle) {
-  const chat = chats.find(c => c.id === chatId);
-  if (chat) {
-    chat.title = newTitle.substring(0, 50);
-    chat.updatedAt = new Date().toISOString();
-    saveChatsToStorage();
-    renderChatHistory();
+function saveChatData() {
+  if (currentUser) {
+    localStorage.setItem('tidaai_chats', JSON.stringify(allChats));
   }
+}
+
+function loadChats() {
+  if (currentUser) {
+    const saved = localStorage.getItem('tidaai_chats');
+    if (saved) {
+      allChats = JSON.parse(saved).filter(c => c.userId === currentUser.id);
+    }
+    
+    const savedChatId = localStorage.getItem('tidaai_current_chat');
+    if (savedChatId && allChats.find(c => c.id === savedChatId)) {
+      loadChat(savedChatId);
+    }
+  }
+}
+
+function updateChatList() {
+  elements.chatCount.textContent = allChats.length;
+  
+  if (allChats.length === 0) {
+    elements.chatHistoryEl.innerHTML = '<div style="text-align: center; color: #6b7280; padding: 20px; font-size: 14px;">No chats yet</div>';
+    return;
+  }
+  
+  elements.chatHistoryEl.innerHTML = allChats.map(chat => {
+    const isActive = chat.id === currentChatId;
+    const preview = chat.messages[0]?.content.substring(0, 50) || 'New Chat';
+    
+    return `
+      <div class="chat-item ${isActive ? 'active' : ''}" onclick="loadChat('${chat.id}')">
+        <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 4px;">
+          <div style="font-weight: 500; font-size: 14px; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+            ${chat.title}
+          </div>
+          <button onclick="event.stopPropagation(); deleteChat('${chat.id}')" style="background: none; border: none; color: #6b7280; cursor: pointer; padding: 4px;">
+            <i class="fas fa-trash" style="font-size: 12px;"></i>
+          </button>
+        </div>
+        <div style="font-size: 12px; color: #9ca3af; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+          ${preview}
+        </div>
+      </div>
+    `;
+  }).join('');
 }
 
 // Message Handling
 async function sendMessage() {
-  const input = elements.userInput.value.trim();
-  if (!input) return;
+  const message = elements.userInput.value.trim();
+  if (!message) return;
+  
+  // Create new chat if needed
+  if (!currentChatId) {
+    createNewChat();
+  }
   
   // Hide welcome message
   elements.welcomeMessage.classList.add('hidden');
   
   // Add user message
-  appendMessage('user', input);
-  messages.push({ role: 'user', content: input });
-  
-  // Clear input
+  addMessage('user', message);
   elements.userInput.value = '';
   autoResizeTextarea();
-  
-  // Update chat title if first message
-  if (messages.length === 1) {
-    updateChatTitle(currentChatId, input);
-  }
   
   // Show typing indicator
   const typingId = showTypingIndicator();
   
-  // Disable send button
-  elements.sendBtn.disabled = true;
-  elements.userInput.disabled = true;
-  
   try {
-    const response = await callOpenRouterAPI(input);
+    // Get AI response
+    const response = await getAIResponse(message);
     removeTypingIndicator(typingId);
+    addMessage('assistant', response);
     
-    appendMessage('assistant', response);
-    messages.push({ role: 'assistant', content: response });
+    // Update chat title if it's the first message
+    const chat = allChats.find(c => c.id === currentChatId);
+    if (chat && chat.messages.length === 2) {
+      chat.title = message.substring(0, 30) + (message.length > 30 ? '...' : '');
+      updateChatList();
+    }
     
-    // Save chat
-    updateCurrentChat();
   } catch (error) {
     removeTypingIndicator(typingId);
-    appendMessage('assistant', 'Sorry, I encountered an error. Please check your API key and try again.');
-    console.error('API Error:', error);
-  } finally {
-    elements.sendBtn.disabled = false;
-    elements.userInput.disabled = false;
-    elements.userInput.focus();
-  }
-}
-
-async function callOpenRouterAPI(userMessage) {
-  const response = await fetch(CONFIG.API_URL, {
-    method: "POST",
-    headers: {
-      "Authorization": `Bearer ${CONFIG.API_KEY}`,
-      "HTTP-Referer": CONFIG.SITE_URL,
-      "X-Title": CONFIG.SITE_NAME,
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify({
-      model: CONFIG.MODEL,
-      messages: [
-        {
-          role: "system",
-          content: "You are TIDA AI, a helpful AI assistant that speaks both Khmer and English fluently. You help users with various tasks including coding, learning, translation, and general questions. Be friendly, concise, and helpful."
-        },
-        ...messages.slice(-10), // Keep last 10 messages for context
-        {
-          role: "user",
-          content: userMessage
-        }
-      ]
-    })
-  });
-  
-  if (!response.ok) {
-    throw new Error(`API request failed: ${response.statusText}`);
+    addMessage('assistant', 'Sorry, I encountered an error. Please try again. Error: ' + error.message);
   }
   
-  const data = await response.json();
-  return data.choices[0].message.content;
+  saveChatData();
 }
 
-// UI Message Functions
-function appendMessage(role, content, save = true) {
-  const messageDiv = document.createElement('div');
-  messageDiv.className = `message ${role}`;
+function addMessage(role, content) {
+  if (!chatHistory[currentChatId]) {
+    chatHistory[currentChatId] = [];
+  }
   
-  const avatarIcon = role === 'user' 
+  const message = { role, content, timestamp: new Date().toISOString() };
+  chatHistory[currentChatId].push(message);
+  
+  // Update in allChats
+  const chat = allChats.find(c => c.id === currentChatId);
+  if (chat) {
+    chat.messages.push(message);
+  }
+  
+  renderMessage(message);
+  scrollToBottom();
+}
+
+function renderMessages() {
+  elements.chatBox.innerHTML = '';
+  elements.welcomeMessage.classList.add('hidden');
+  
+  const messages = chatHistory[currentChatId] || [];
+  messages.forEach(msg => renderMessage(msg));
+  scrollToBottom();
+}
+
+function renderMessage(message) {
+  const messageEl = document.createElement('div');
+  messageEl.className = `message ${message.role}`;
+  
+  const avatarIcon = message.role === 'user' 
     ? '<i class="fas fa-user"></i>' 
     : '<i class="fas fa-robot"></i>';
   
-  const label = role === 'user' ? 'You' : 'TIDA AI';
+  const label = message.role === 'user' ? 'You' : 'TIDA AI';
   
-  messageDiv.innerHTML = `
+  const formattedContent = formatMessageContent(message.content);
+  
+  messageEl.innerHTML = `
     <div class="message-content-wrapper">
       <div class="message-avatar">${avatarIcon}</div>
       <div class="message-bubble">
         <div class="message-label">${label}</div>
-        <div class="message-text">${formatMessage(content)}</div>
+        <div class="message-text">${formattedContent}</div>
       </div>
     </div>
   `;
   
-  elements.chatBox.appendChild(messageDiv);
-  elements.chatBox.scrollTop = elements.chatBox.scrollHeight;
-  
-  // Add copy buttons to code blocks
-  addCopyButtons();
+  elements.chatBox.appendChild(messageEl);
 }
 
-function formatMessage(text) {
-  // Convert markdown-style code blocks
-  text = text.replace(/```(\w+)?\n([\s\S]*?)```/g, (match, lang, code) => {
+function formatMessageContent(content) {
+  // Format code blocks
+  content = content.replace(/```(\w+)?\n([\s\S]*?)```/g, (match, lang, code) => {
     return `<pre><code class="language-${lang || 'text'}">${escapeHtml(code.trim())}</code><button class="copy-btn" onclick="copyCode(this)"><i class="fas fa-copy"></i> Copy</button></pre>`;
   });
   
-  // Convert inline code
-  text = text.replace(/`([^`]+)`/g, '<code>$1</code>');
+  // Format inline code
+  content = content.replace(/`([^`]+)`/g, '<code>$1</code>');
   
-  // Convert line breaks
-  text = text.replace(/\n/g, '<br>');
+  // Format bold
+  content = content.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
   
-  return text;
-}
-
-function escapeHtml(text) {
-  const div = document.createElement('div');
-  div.textContent = text;
-  return div.innerHTML;
-}
-
-function addCopyButtons() {
-  const codeBlocks = elements.chatBox.querySelectorAll('pre code');
-  codeBlocks.forEach(block => {
-    if (!block.parentElement.querySelector('.copy-btn')) {
-      const copyBtn = document.createElement('button');
-      copyBtn.className = 'copy-btn';
-      copyBtn.innerHTML = '<i class="fas fa-copy"></i> Copy';
-      copyBtn.onclick = function() { copyCode(this); };
-      block.parentElement.appendChild(copyBtn);
-    }
-  });
-}
-
-function copyCode(button) {
-  const pre = button.parentElement;
-  const code = pre.querySelector('code');
-  const text = code.textContent;
+  // Format italic
+  content = content.replace(/\*([^*]+)\*/g, '<em>$1</em>');
   
-  navigator.clipboard.writeText(text).then(() => {
-    button.innerHTML = '<i class="fas fa-check"></i> Copied!';
-    setTimeout(() => {
-      button.innerHTML = '<i class="fas fa-copy"></i> Copy';
-    }, 2000);
-  });
+  // Format line breaks
+  content = content.replace(/\n/g, '<br>');
+  
+  return content;
 }
 
 function showTypingIndicator() {
   const typingId = 'typing_' + Date.now();
-  const messageDiv = document.createElement('div');
-  messageDiv.className = 'message assistant';
-  messageDiv.id = typingId;
-  messageDiv.innerHTML = `
+  const messageEl = document.createElement('div');
+  messageEl.className = 'message assistant';
+  messageEl.id = typingId;
+  
+  messageEl.innerHTML = `
     <div class="message-content-wrapper">
       <div class="message-avatar"><i class="fas fa-robot"></i></div>
       <div class="message-bubble">
@@ -405,59 +417,93 @@ function showTypingIndicator() {
       </div>
     </div>
   `;
-  elements.chatBox.appendChild(messageDiv);
-  elements.chatBox.scrollTop = elements.chatBox.scrollHeight;
+  
+  elements.chatBox.appendChild(messageEl);
+  scrollToBottom();
   return typingId;
 }
 
 function removeTypingIndicator(typingId) {
-  const typingElement = document.getElementById(typingId);
-  if (typingElement) {
-    typingElement.remove();
+  const el = document.getElementById(typingId);
+  if (el) el.remove();
+}
+
+// AI API Integration
+async function getAIResponse(userMessage) {
+  const messages = [
+    {
+      role: 'system',
+      content: 'You are TIDA AI, a helpful AI assistant that can communicate in both English and Khmer (ភាសាខ្មែរ). You are knowledgeable, friendly, and provide clear, accurate responses. When users write in Khmer, respond in Khmer. When they write in English, respond in English.'
+    }
+  ];
+  
+  // Add conversation history (last 10 messages for context)
+  const history = chatHistory[currentChatId] || [];
+  const recentHistory = history.slice(-10);
+  
+  recentHistory.forEach(msg => {
+    messages.push({
+      role: msg.role,
+      content: msg.content
+    });
+  });
+  
+  // Add current message
+  messages.push({
+    role: 'user',
+    content: userMessage
+  });
+  
+  const response = await fetch(CONFIG.API_URL, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${CONFIG.API_KEY}`,
+      'HTTP-Referer': CONFIG.SITE_URL,
+      'X-Title': CONFIG.SITE_NAME,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      model: CONFIG.MODEL,
+      messages: messages,
+      temperature: 0.7,
+      max_tokens: 2000
+    })
+  });
+  
+  if (!response.ok) {
+    throw new Error(`API Error: ${response.status} ${response.statusText}`);
   }
-}
-
-function clearChatBox() {
-  elements.chatBox.innerHTML = `
-    <div class="welcome" id="welcomeMessage">
-      <div class="welcome-card">
-        <div class="welcome-icon">
-          <i class="fas fa-robot"></i>
-        </div>
-        <h3 style="font-size: 24px; font-weight: bold; margin-bottom: 12px;">Welcome to TIDA AI</h3>
-        <p style="color: #d1d5db; margin-bottom: 24px;">Your Khmer-speaking AI assistant</p>
-        <div class="feature-grid">
-          <div class="feature-card">
-            <i class="fas fa-code" style="color: #60a5fa; font-size: 24px; margin-bottom: 8px;"></i>
-            <p style="font-size: 14px;">Code Help</p>
-          </div>
-          <div class="feature-card">
-            <i class="fas fa-graduation-cap" style="color: #10b981; font-size: 24px; margin-bottom: 8px;"></i>
-            <p style="font-size: 14px;">Learning</p>
-          </div>
-          <div class="feature-card">
-            <i class="fas fa-language" style="color: #c084fc; font-size: 24px; margin-bottom: 8px;"></i>
-            <p style="font-size: 14px;">Khmer</p>
-          </div>
-        </div>
-      </div>
-    </div>
-  `;
-  elements.welcomeMessage = document.getElementById('welcomeMessage');
-}
-
-// Input Handling
-function handleEnterKey(e) {
-  if (e.key === 'Enter' && !e.shiftKey) {
-    e.preventDefault();
-    sendMessage();
+  
+  const data = await response.json();
+  
+  if (!data.choices || !data.choices[0] || !data.choices[0].message) {
+    throw new Error('Invalid API response format');
   }
+  
+  return data.choices[0].message.content;
 }
 
-function clearInput() {
-  elements.userInput.value = '';
-  autoResizeTextarea();
-  elements.userInput.focus();
+// UI Utilities
+function clearChat() {
+  elements.chatBox.innerHTML = '';
+  elements.welcomeMessage.classList.remove('hidden');
+  currentChatId = null;
+  chatHistory = {};
+  localStorage.removeItem('tidaai_current_chat');
+}
+
+function toggleSidebar() {
+  elements.sidebar.classList.toggle('open');
+  elements.overlay.classList.toggle('show');
+}
+
+function closeSidebar() {
+  elements.sidebar.classList.remove('open');
+  elements.overlay.classList.remove('show');
+}
+
+function scrollToBottom() {
+  elements.chatBox.scrollTop = elements.chatBox.scrollHeight;
 }
 
 function autoResizeTextarea() {
@@ -466,132 +512,43 @@ function autoResizeTextarea() {
   textarea.style.height = Math.min(textarea.scrollHeight, 120) + 'px';
 }
 
-function toggleVoiceInput() {
-  if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    const recognition = new SpeechRecognition();
-    
-    recognition.lang = 'km-KH'; // Khmer language
-    recognition.interimResults = false;
-    
-    recognition.onstart = () => {
-      elements.voiceBtn.style.color = '#ef4444';
-    };
-    
-    recognition.onresult = (event) => {
-      const transcript = event.results[0][0].transcript;
-      elements.userInput.value = transcript;
-      autoResizeTextarea();
-    };
-    
-    recognition.onend = () => {
-      elements.voiceBtn.style.color = '';
-    };
-    
-    recognition.onerror = () => {
-      alert('Voice input not available');
-    };
-    
-    recognition.start();
-  } else {
-    alert('Voice input is not supported in your browser');
-  }
-}
-
-// Chat History UI
-function renderChatHistory() {
-  elements.chatHistory.innerHTML = '';
-  elements.chatCount.textContent = chats.length;
+function copyCode(button) {
+  const pre = button.parentElement;
+  const code = pre.querySelector('code').textContent;
   
-  chats.forEach(chat => {
-    const chatItem = document.createElement('div');
-    chatItem.className = 'chat-item' + (chat.id === currentChatId ? ' active' : '');
-    chatItem.innerHTML = `
-      <div style="display: flex; justify-content: space-between; align-items: center;">
-        <div style="flex: 1; min-width: 0;">
-          <div style="font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${chat.title}</div>
-          <div style="font-size: 12px; color: #9ca3af; margin-top: 4px;">${formatDate(chat.updatedAt)}</div>
-        </div>
-        <button onclick="deleteChat('${chat.id}')" style="background: none; border: none; color: #ef4444; cursor: pointer; padding: 8px; margin-left: 8px;" title="Delete">
-          <i class="fas fa-trash"></i>
-        </button>
-      </div>
-    `;
-    
-    chatItem.addEventListener('click', (e) => {
-      if (!e.target.closest('button')) {
-        loadChat(chat.id);
-      }
-    });
-    
-    elements.chatHistory.appendChild(chatItem);
+  navigator.clipboard.writeText(code).then(() => {
+    button.innerHTML = '<i class="fas fa-check"></i> Copied!';
+    setTimeout(() => {
+      button.innerHTML = '<i class="fas fa-copy"></i> Copy';
+    }, 2000);
   });
 }
 
-// Storage Functions
-function saveUserData() {
-  localStorage.setItem('tidaUser', JSON.stringify(currentUser));
+function escapeHtml(text) {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
 }
 
-function loadUserData() {
-  const userData = localStorage.getItem('tidaUser');
-  if (userData) {
-    currentUser = JSON.parse(userData);
-    updateUserUI();
-  }
+function parseJwt(token) {
+  const base64Url = token.split('.')[1];
+  const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+  const jsonPayload = decodeURIComponent(atob(base64).split('').map(c => {
+    return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
+  }).join(''));
+  return JSON.parse(jsonPayload);
 }
 
-function saveChatsToStorage() {
-  localStorage.setItem('tidaChats', JSON.stringify(chats));
-}
-
-function loadChatsFromStorage() {
-  const chatsData = localStorage.getItem('tidaChats');
-  if (chatsData) {
-    chats = JSON.parse(chatsData);
-    if (chats.length > 0) {
-      renderChatHistory();
-      loadChat(chats[0].id);
-    }
-  }
-}
-
-function updateCurrentChat() {
-  const chat = chats.find(c => c.id === currentChatId);
-  if (chat) {
-    chat.messages = messages;
-    chat.updatedAt = new Date().toISOString();
-    saveChatsToStorage();
-    renderChatHistory();
-  }
-}
-
-// Utility Functions
-function formatDate(dateString) {
-  const date = new Date(dateString);
-  const now = new Date();
-  const diffMs = now - date;
-  const diffMins = Math.floor(diffMs / 60000);
-  const diffHours = Math.floor(diffMs / 3600000);
-  const diffDays = Math.floor(diffMs / 86400000);
-  
-  if (diffMins < 1) return 'Just now';
-  if (diffMins < 60) return `${diffMins}m ago`;
-  if (diffHours < 24) return `${diffHours}h ago`;
-  if (diffDays < 7) return `${diffDays}d ago`;
-  
-  return date.toLocaleDateString();
-}
-
-// Global Functions (for inline onclick handlers)
-window.handleGoogleSignIn = handleGoogleSignIn;
+// Make functions globally available
 window.devLogin = devLogin;
+window.handleGoogleSignIn = handleGoogleSignIn;
+window.loadChat = loadChat;
 window.deleteChat = deleteChat;
 window.copyCode = copyCode;
 
 // Initialize when DOM is ready
 if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', init);
+  document.addEventListener('DOMContentLoaded', initApp);
 } else {
-  init();
+  initApp();
 }
